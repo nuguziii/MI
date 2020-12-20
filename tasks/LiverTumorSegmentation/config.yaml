@@ -1,0 +1,13 @@
+train: True
+test: False
+auto_resume: False
+
+data_dir: 'E:\dataset'
+log_dir: 'E:\dataset'
+output_dir: 'E:\dataset'
+description: ''
+
+gpus: 1
+batch_size: 2
+lr: 0.001
+epoch: 300
