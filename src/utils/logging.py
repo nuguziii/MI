@@ -26,7 +26,7 @@ def create_logger(output_dir, description, phase='train'):
     console = logging.StreamHandler()
     logging.getLogger('').addHandler(console)
 
-    tensorboard_log_dir = final_output_dir / 'log'
+    tensorboard_log_dir = final_output_dir / time_str
 
     print('=> creating {}'.format(tensorboard_log_dir))
     tensorboard_log_dir.mkdir(parents=True, exist_ok=True)
@@ -46,4 +46,4 @@ def save_checkpoint(states, is_best, output_dir, model, epoch,
     if is_best and 'state_dict' in states:
         torch.save(states['best_state_dict'],
                    os.path.join(output_dir, 'model_best_state_dict.pth'))
-        torch.save(model, os.path.join(output_dir, 'model_best.pth'))
+        torch.save(model, os.path.join(output_dir, 'best_model.pth'))
