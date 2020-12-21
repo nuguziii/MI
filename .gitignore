@@ -1,3 +1,4 @@
 .idea/
 MedicalImaging.egg-info/
 **__pycache__/
+results/

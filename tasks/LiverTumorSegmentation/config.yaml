@@ -2,12 +2,13 @@ train: True
 test: False
 auto_resume: False
 
-data_dir: 'E:\dataset'
-log_dir: 'E:\dataset'
-output_dir: 'E:\dataset'
-description: ''
+data_dir: 'E:\Medical_Dataset\LiTS'
+log_dir: 'C:\Users\CGIP\Desktop\github\Medical-Imaging\results'
+output_dir: 'C:\Users\CGIP\Desktop\github\Medical-Imaging\results'
+model_dir: ''
+description: 'NET'
 
-gpus: 1
+gpus: [0]
 batch_size: 2
 lr: 0.001
 epoch: 300

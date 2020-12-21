@@ -2,6 +2,7 @@ import pprint
 import os, time
 import yaml
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.parallel
@@ -13,6 +14,13 @@ import torch.optim as optim
 
 from src.utils.logging import create_logger, save_checkpoint
 from src.utils.measure import AverageMeter
+from src.utils.encoding import one_hot_to_index
+from src.utils.io import save_image_to_nib
+from src.utils.evaluation_3d import dc, hd95, assd, sensitivity, precision
+
+# TODO: import network, loss, dataset
+from src.network.UNet import UNet3D
+from src.loss.DiceLoss import loss_softdice
 from LITSDataset import LITSDataset
 
 class Segmentation(object):
@@ -22,6 +30,8 @@ class Segmentation(object):
         # TODO: set network
         if network is not None:
             self.network = network
+        else:
+            self.network = UNet3D
 
         # TODO: set dataset
         if dataset is not None:
@@ -30,7 +40,12 @@ class Segmentation(object):
             self.dataset = LITSDataset
 
         # TODO: set loss
-        self.loss = None
+        self.loss = loss_softdice()
+
+        # TODO: set input shape
+        self.width = 32
+        self.height = 32
+        self.depth = 16
 
     def train(self):
         print(self.config['log_dir'])
@@ -43,11 +58,14 @@ class Segmentation(object):
         writer = SummaryWriter(log_dir=tb_log_dir)
 
         # TODO: set model
-        model = self.network(in_channels=1)
-        model = torch.nn.DataParallel(model, device_ids=[self.config.gpus]).cuda()
+        model = self.network(in_channels=1,
+                             out_channels=2,
+                             final_sigmoid=False) # softmax
+        logger.info(model)
+        model = torch.nn.DataParallel(model, device_ids=self.config['gpus']).cuda()
 
         # TODO: set data loader
-        train_dataset = self.dataset(128, 128, 64,
+        train_dataset = self.dataset(self.width, self.height, self.depth,
                                     self.config['data_dir'] + "\\train",
                                     self.config['data_dir'] + "\\label",
                                     aug=[])
@@ -60,7 +78,6 @@ class Segmentation(object):
         )
 
         best_perf = 0.0
-        last_epoch = -1
         begin_epoch = 0
 
         checkpoint_file = os.path.join(
@@ -68,6 +85,7 @@ class Segmentation(object):
         )
 
         # TODO: set optimizer
+        # reference: https://pytorch.org/docs/stable/optim.html
         optimizer = optim.Adam(model.parameters(), lr=self.config['lr'], weight_decay=1e-4)
 
         if os.path.exists(checkpoint_file) and self.config['auto_resume']:
@@ -83,7 +101,9 @@ class Segmentation(object):
                 checkpoint_file, checkpoint['epoch']))
 
         # TODO: set learning rate scheduler
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.5, last_epoch=last_epoch)
+        # reference: https://pytorch.org/docs/stable/optim.html
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader), eta_min=0,
+                                                               last_epoch=-1)
 
         for epoch in range(begin_epoch, self.config['epoch']):
             model.train()
@@ -95,11 +115,11 @@ class Segmentation(object):
             lr_scheduler.step()
 
             end = time.time()
-            for idx, (image, label, contour_label, shape_label) in enumerate(train_loader):
+            for idx, batch in enumerate(train_loader):
                 data_time.update(time.time() - end)
 
-                image = image.type(torch.cuda.FloatTensor)
-                label = label.type(torch.cuda.LongTensor)
+                image = batch['image'].type(torch.cuda.FloatTensor)
+                label = batch['label'].type(torch.cuda.LongTensor)
 
                 ''' class weight calculation
                 true_class = np.round_(float(label.sum()) / label.reshape((-1)).size(0), 2)
@@ -117,6 +137,10 @@ class Segmentation(object):
                 losses.update(loss.item(), image.size(0))
                 batch_time.update(time.time() - end)
                 end = time.time()
+
+                '''DEBUG'''
+                output_temp = one_hot_to_index(output.detach().cpu().numpy())
+                save_image_to_nib(output_temp[0].astype(np.uint8).transpose(1,2,0), final_output_dir, 'res')
 
                 # TODO: add validation stage
 
@@ -168,9 +192,8 @@ class Segmentation(object):
 
     def _load_pre_trained_weights(self, model):
         try:
-            checkpoints_folder = os.path.join('./runs', self.config['fine_tune_from'], 'checkpoints')
-            state_dict = torch.load(os.path.join(checkpoints_folder, 'model.pth'))
-            model.load_state_dict(state_dict)
+            checkpoint = torch.load(self.config['model_dir'])
+            model.load_state_dict(checkpoint['state_dict'])
             print("Loaded pre-trained model with success.")
         except FileNotFoundError:
             print("Pre-trained weights not found. Training from scratch.")
@@ -188,11 +211,70 @@ class Segmentation(object):
         return valid_loss
 
     def test(self):
-        # TODO: add test metric, show/save result
-        pass
+        logger, final_output_dir, result_dir = create_logger(self.config['log_dir'],
+                                                             self.config['description'],
+                                                             'test')
+
+        logger.info(pprint.pformat(self.config))
+
+        # TODO: set data loader
+        test_dataset = self.dataset(self.width, self.height, self.depth,
+                                    self.config['data_dir'] + "\\test",
+                                    self.config['data_dir'] + "\\label",
+                                    aug=[])
+        test_loader = torch.utils.data.DataLoader(
+            test_dataset,
+            batch_size=1,
+            shuffle=False,
+            num_workers=4,
+            pin_memory=True
+        )
+
+        logger.info("=> loading model '{}'".format(self.config['model_dir']))
+        model = torch.load(self.config['model_dir'])
+
+        # TODO: add meter (metric)
+        batch_time = AverageMeter()
+        data_time = AverageMeter()
+
+        end = time.time()
+        model.eval()
+        for idx, (image, label, shape_label) in enumerate(test_loader):
+            data_time.update(time.time() - end)
+
+            # TODO: test model
+            output = model(image)
+
+            # TODO: metric
+            # ...
+
+            # TODO: save result, visualize (optional)
+            # ...
+
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            msg = '[{0}/{1}]\t' \
+                  'Time {batch_time.val:.3f}s ({batch_time.avg:.3f}s)\t' \
+                  'Speed {speed:.1f} samples/s\t' \
+                  'Data {data_time.val:.3f}s ({data_time.avg:.3f}s)'.format(
+                idx + 1, len(test_loader), batch_time=batch_time,
+                speed=image.size(0) / batch_time.val,
+                data_time=data_time)
+            logger.info(msg)
+
+        msg = '[total]\t' \
+              'Date {data_time.avg:.3f}s'.format(
+            data_time=data_time)
+        logger.info(msg)
 
 if __name__ == '__main__':
     config = yaml.load(open("./tasks/LiverTumorSegmentation/config.yaml", "r"), Loader=yaml.FullLoader)
 
     seg = Segmentation(config)
-    seg.train()
+
+    if config['train']:
+        seg.train()
+
+    if config['test']:
+        seg.test()

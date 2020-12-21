@@ -85,6 +85,7 @@ class LITSDataset(Dataset):
             image = image_augmentation(image, aug=self.aug)
 
         image = normalize(image, -340, 360)
+        image = np.expand_dims(image, axis=0)
 
         if self.label_dir_path:
             return {'image_path': self.data_list[index]['image_path'],
