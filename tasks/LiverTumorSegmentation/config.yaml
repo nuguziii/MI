@@ -2,11 +2,11 @@ train: True
 test: False
 auto_resume: False
 
-data_dir: 'E:\Medical_Dataset\LiTS'
-log_dir: 'C:\Users\CGIP\Desktop\github\Medical-Imaging\results'
-output_dir: 'C:\Users\CGIP\Desktop\github\Medical-Imaging\results'
+data_dir: 'path to data directory'
+log_dir: 'path to log directory'
+output_dir: 'path to output directory'
 model_dir: ''
-description: 'NET'
+description: 'description'
 
 gpus: [0]
 batch_size: 2

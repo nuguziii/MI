@@ -138,7 +138,7 @@ class Segmentation(object):
                 batch_time.update(time.time() - end)
                 end = time.time()
 
-                '''DEBUG'''
+                '''FOR DEBUG'''
                 output_temp = one_hot_to_index(output.detach().cpu().numpy())
                 save_image_to_nib(output_temp[0].astype(np.uint8).transpose(1,2,0), final_output_dir, 'res')
 
